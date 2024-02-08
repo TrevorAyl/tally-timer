@@ -1,6 +1,6 @@
 # Tally Timer
 
-Tally timer is a scripty thing that I shittily threw together. It will take in tally data from a control system (in theory connected to a switcher) and record the amount of time in milliseconds that the tally lamp is on. 
+I've amended this to act as a server (it wasn't seeing the TCP data as a client) and to write the cuts to disk against current time in an EDL format. Tested importing to Avid.  
 
 ## Starting it up
 - Clone the repo
@@ -10,6 +10,6 @@ Tally timer is a scripty thing that I shittily threw together. It will take in t
 - Ask your director why we have 100 cameras when they only use 12
 
 ## Controls:
-Every time a tally object is updated, the tallies object will be written to disk. However, if you would like to do it manually for fun you can use `ctl+p`.
+Every time a tally object is updated, it is stored to an array and the previous tallies object label is appended to disk as an EDL line using current time as the outPoint. 
 
-Additionally, to break and print a report to the console, press `ctl+c` like normal.
+To break press `ctl+c` like normal (will use current time as outpoint for last tally cut).
