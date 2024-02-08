@@ -1,25 +1,26 @@
-const net = require('net');
-const bsplit = require('buffer-split')
-const jspack = require('jspack').jspack
-const keypress = require('keypress')
-const fs = require('fs');
+// Amended to be a server, rather than a client and to append in EDL format to a .txt file
 
-keypress(process.stdin);
-var tallies = {};
+const net = require('net');
+const bsplit = require('buffer-split');
+const jspack = require('jspack').jspack;
+const fs = require('fs');
+const keypress = require('keypress');
+
+var tallies = [];
 const file_date = new Date();
-const month = file_date.getMonth();
-const day = file_date.getDate();
+const month = (file_date.getMonth() + 1).toLocaleString('en-US', {minimumIntegerDigits: 2, useGrouping:false}); // JavaScript months are 0-indexed
+const day = file_date.getDate().toLocaleString('en-US', {minimumIntegerDigits: 2, useGrouping:false});
 const year = file_date.getFullYear();
-const hours = file_date.getHours();
-const minutes = file_date.getMinutes();
-const path_pfx = `./${month}-${day}-${year}-${hours}-${minutes}`
+const hours = file_date.getHours().toLocaleString('en-US', {minimumIntegerDigits: 2, useGrouping:false});
+const minutes = file_date.getMinutes().toLocaleString('en-US', {minimumIntegerDigits: 2, useGrouping:false});
+const path_pfx = `./${year}-${month}-${day}-${hours}-${minutes}`;
+const edlTopLines = "TITLE: This is the EDL title\r\nFCM: NON DROP FRAME\r\n";
+const frameRate = 50;
+
 
 class Index {
 	constructor(tally_obj) {
-		this.duration = 0;
-		this.timer1 = null;
 		this.updateControl(tally_obj);
-		this.counter = 0;
 	}
 
 	updateControl(obj) {
@@ -28,58 +29,18 @@ class Index {
 		this.text_tally = obj.control.text_tally;
 		this.brightness = obj.control.brightness;
 		this.text = obj.TEXT;
+		this.time = obj.TIME;
 		this.index = obj.INDEX[0];
-
-		if (this.text_tally > 0 || this.rh_tally > 0 || this.lh_tally > 0) {
-			//two options, start timer if not running or do nothing
-			if (this.timer1 == null) { //timer stopped
-				console.log(this.text + ' => PGM')
-				this.counter ++;
-				this.timer1 = Date.now();
-				writeToDisk()
-			} else {
-				//pass
-			}
-		} else {
-			//two options, either stop timer if running, or do nothing
-			if (this.timer1 != null) {
-				console.log(this.text + " => Null")
-				this.duration += Date.now() - this.timer1;
-				this.timer1 = null;
-				writeToDisk()
-			} else {
-				//pass
-			}
-			
-		}
 	}	
 }
-
-var client = new net.Socket();
-client.connect(6969, "10.8.60.61", () => {
-	console.log('Connected');
-	console.clear();
-})
-client.on('data', (data) => {
-	delim = new Buffer.from([0xfe, 0x02]);
-	var spl_data = bsplit(data, delim);
-	spl_data.forEach((data) => {
-		if (data.length > 0 ) {
-			parse(data);
-		}
-	})
-})
-
-client.on('close', () => {
-	console.log("Socket closed.")
-})
-
 var parse = function(data) {
 	if (data.length > 12) {
 
 		tallyobj = {};
 
 		var cursor = 0;
+
+		tallyobj.TIME = timecodeNow();
 
 		//Message Format
 		const _PBC = 2 //bytes
@@ -109,39 +70,36 @@ var parse = function(data) {
 
 		tallyobj.CONTROL = jspack.Unpack( "<H", data, cursor);
 		cursor += _CONTROL;
-		//console.log(CONTROL[0] >> 0&2b1)
-
-		tallyobj.control = {};
-		tallyobj.control.rh_tally = (tallyobj.CONTROL >> 0 & 0b11);
-		tallyobj.control.text_tally = (tallyobj.CONTROL >> 2 & 0b11);
-		tallyobj.control.lh_tally = (tallyobj.CONTROL >> 4 & 0b11);
-		tallyobj.control.brightness = (tallyobj.CONTROL >> 6 & 0b11);
-		tallyobj.control.reserved = (tallyobj.CONTROL >> 8 & 0b1111111);
-		tallyobj.control.control_data = (tallyobj.CONTROL >> 15 & 0b1);
 
 		var LENGTH = jspack.Unpack( "<H", data, cursor)
 		cursor += _LENGTH;
 
-		tallyobj.TEXT = jspack.Unpack( "s".repeat(LENGTH), data, cursor)
+		tallyobj.TEXT = jspack.Unpack( "s".repeat(LENGTH), data, cursor);
+
 
 		if (tallyobj.TEXT != undefined) {
 			tallyobj.TEXT = tallyobj.TEXT.join("")
-			//console.log(tallyobj.INDEX + " " + tallyobj.TEXT + " " + tallyobj.CONTROL);
-			if (tallyobj.INDEX.toString() in tallies) {
-				tallies[tallyobj.INDEX.toString()].updateControl(tallyobj);
-			} else {
-				tallies[tallyobj.INDEX.toString()] = new Index(tallyobj);
+
+			if (tallies.length == 0){
+				writeToDisk(edlTopLines);
 			}
+			else {
+				var edlNum = (tallies.length).toLocaleString('en-US', {minimumIntegerDigits: 4, useGrouping:false});
+				var last = tallies[tallies.length -1];
+				var inPoint = last.TIME;
+				var outPoint = tallyobj.TIME;
+				var reel = last.TEXT;
+				writeToDisk(edlNum + "   " + reel + "   V      C        " + inPoint + "   " + outPoint + "   "+ inPoint + "   " + outPoint + "\r\n");
+			} 
+			tallies.push(tallyobj);
 
 		};
-
-		
 	}
 }
 
-var writeToDisk = function() {
-	let path = `${path_pfx}.json`
-  	fs.writeFileSync(path, JSON.stringify(tallies, null, 2))
+function writeToDisk(edlLine) {
+	let path = `${path_pfx}.txt`
+  	fs.appendFileSync(path, edlLine)
 }
 
 var writeCSVToDisk = function(data) {
@@ -150,41 +108,66 @@ var writeCSVToDisk = function(data) {
 	fs.writeFileSync(path, write_data)
 }
 
-function msToTime (ms) {
-        var seconds = (ms/1000);
-        var minutes = parseInt(seconds/60, 10);
-        seconds = seconds%60;
-        var hours = parseInt(minutes/60, 10);
-        minutes = minutes%60;
-        
-        return hours + ':' + minutes + ':' + seconds;
-    }
+function timecodeNow(){
+	// get HH:MM:SS:FF
+	var today = new Date();
+	var hh = today.getHours().toLocaleString('en-US', {minimumIntegerDigits: 2, useGrouping:false});
+	var mm = today.getMinutes().toLocaleString('en-US', {minimumIntegerDigits: 2, useGrouping:false});
+	var ss = today.getSeconds().toLocaleString('en-US', {minimumIntegerDigits: 2, useGrouping:false});
+	var ms = today.getMilliseconds();
+	var ff = Math.floor(ms/1000*frameRate).toLocaleString('en-US', {minimumIntegerDigits: 2, useGrouping:false});
+	var time = hh + ":" + mm + ":" + ss + ":" + ff;
+	return time;
+}
 
+// Create a TCP server
+const server = net.createServer((socket) => {
+    console.log('Client connected');
 
-process.stdin.on('keypress', function (ch, key) {
-  //console.log('got "keypress"', key);
-  if (key && key.ctrl && key.name == 'c') {
-  	var csv_data = ["index, text, duration, counter"];
-  	console.clear();
-  	console.log()
-  	console.log("Printing report:")
-  	console.log("Start time: " + file_date)
-  	console.log("End time: " + new Date())
-  	Object.values(tallies).forEach((item) => {
-  		console.log(`${item.text} has been on ${item.counter} times for ${msToTime(item.duration)}`)
-  		csv_data.push(`${item.index},${item.text},${item.duration},${item.counter}`);
-  	})
-  	//console.log('csv_data', csv_data);
-  	writeCSVToDisk(csv_data);
-    process.stdin.pause();
-    process.exit();
-  }
-  if (key && key.ctrl && key.name == "p") {
-  	console.log('Writing to disk...')
-  	writeToDisk();
-  }
+    socket.on('data', (data) => {
+        delim = Buffer.from([0xfe, 0x02]);
+        var spl_data = bsplit(data, delim);
+        spl_data.forEach((dataPiece) => {
+            if (dataPiece.length > 0) {
+                parse(dataPiece); // Use the same parse function
+            }
+        });
+    });
+
+    socket.on('close', () => {
+        console.log('Connection closed');
+    });
+
+    socket.on('error', (err) => {
+        console.error(`Error: ${err}`);
+    });
 });
- 
+
+server.listen(9910, '127.0.0.1', () => {
+    console.log('Server listening on port 9910');
+});
+
+// Key press setup
+keypress(process.stdin);
+process.stdin.on('keypress', function (ch, key) {
+    console.log('got "keypress"', key);
+    if (key && key.ctrl && key.name == 'c') {
+		// write the last event
+		var edlNum = (tallies.length).toLocaleString('en-US', {minimumIntegerDigits: 4, useGrouping:false});
+		var last = tallies[tallies.length -1];
+		var inPoint = last.TIME;
+		var outPoint = timecodeNow();
+		var reel = last.TEXT;
+		writeToDisk(edlNum + "   " + reel + "   V      C        " + inPoint + "   " + outPoint + "   "+ inPoint + "   " + outPoint + "\r\n");
+
+        process.stdin.pause();
+        process.exit();
+    }
+    if (key && key.ctrl && key.name == "p") {
+        // console.log('Writing to disk...');
+        // writeToDisk();
+    }
+});
+
 process.stdin.setRawMode(true);
 process.stdin.resume();
-
