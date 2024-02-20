@@ -10,6 +10,11 @@ I've amended this to act as a server (it wasn't seeing the TCP data as a client)
 - Ask your director why we have 100 cameras when they only use 12
 
 ## Controls:
-Every time a tally object is updated, it is stored to an array and the previous tallies object label is appended to disk as an EDL line using current time as the outPoint. 
+Every time a tally object is updated, it is stored to an array and can be written to an AAF, either peridically or on keyboard command. 
+
+`ctl + o` writes to file from forst to last tally chane time and resets start time to last tally change time.
+
+`ctl + something` does the same but does not update the start time.
+
 
 To break press `ctl+c` like normal (will use current time as outpoint for last tally cut).
