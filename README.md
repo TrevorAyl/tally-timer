@@ -14,7 +14,7 @@ Every time a tally object is updated, it is stored to an array and can be writte
 
 `ctl + o` writes to file from forst to last tally chane time and resets start time to last tally change time.
 
-`ctl + something` does the same but does not update the start time.
+`ctl + p` does the same but does not update the start time.
 
 
 To break press `ctl+c` like normal (will use current time as outpoint for last tally cut).
